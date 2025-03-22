@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { reportFraud } from "../api";
+import { useNavigate } from "react-router-dom";
 
 export default function FraudReport() {
   const [formData, setFormData] = useState({
@@ -6,15 +8,47 @@ export default function FraudReport() {
     reporting_entity_id: "",
     fraud_details: "",
   });
+  const [isLoading, setIsLoading] = useState(false);
+  const [result, setResult] = useState(null);
+  const navigate = useNavigate();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    const response = await fetch("/api/report", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(formData),
-    });
-    alert(response.ok ? "Fraud reported successfully!" : "Failed to report fraud.");
+    setIsLoading(true);
+    try {
+      console.log("Submitting fraud report with data:", formData);
+      const response = await reportFraud(formData);
+      
+      console.log("Report fraud API response:", response);
+      
+      setResult({
+        success: response.data.reporting_acknowledged,
+        message: response.data.reporting_acknowledged 
+          ? "Fraud report submitted successfully!" 
+          : `Failed to report fraud. Error code: ${response.data.failure_code}`
+      });
+      if (response.data.reporting_acknowledged) {
+        // Clear form on success
+        setFormData({
+          transaction_id: "",
+          reporting_entity_id: "",
+          fraud_details: "",
+        });
+        
+        // Redirect to dashboard after successful submission
+        setTimeout(() => {
+          navigate("/dashboard", { state: { refreshData: true } });
+        }, 1500);
+      }
+    } catch (error) {
+      console.error("Error reporting fraud:", error);
+      setResult({
+        success: false,
+        message: "Failed to submit report. Please try again later."
+      });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -22,6 +56,12 @@ export default function FraudReport() {
       <h1 className="text-2xl font-bold mb-6 text-white flex items-center">
         <span className="mr-2"></span> Report Fraud
       </h1>
+      
+      {result && (
+        <div className={`p-4 mb-4 rounded-md ${result.success ? 'bg-green-900 text-green-200' : 'bg-red-900 text-red-200'}`}>
+          {result.message}
+        </div>
+      )}
       
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
@@ -71,8 +111,9 @@ export default function FraudReport() {
         <button
           type="submit"
           className="w-full px-4 py-3 mt-2 font-semibold rounded-md shadow-md transition-all duration-200 bg-white text-slate-900"
+          disabled={isLoading}
         >
-          Submit Report
+          {isLoading ? "Submitting..." : "Submit Report"}
         </button>
       </form>
     </div>

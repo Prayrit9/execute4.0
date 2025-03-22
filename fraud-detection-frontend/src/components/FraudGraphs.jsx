@@ -1,7 +1,5 @@
-import { useEffect, useState } from "react";
+import { useState, useEffect } from "react";
 import {
-  BarChart,
-  Bar,
   LineChart,
   Line,
   XAxis,
@@ -9,35 +7,41 @@ import {
   Tooltip,
   Legend,
   ResponsiveContainer,
+  CartesianGrid,
 } from "recharts";
 
-export default function FraudGraphs() {
+export default function FraudGraphs({ fraudData = { trends: [], categories: [] }, isLoading = false }) {
   const [timeRange, setTimeRange] = useState("7d");
-  const [fraudData, setFraudData] = useState({ categories: [], trends: [] });
-  const [isLoading, setIsLoading] = useState(true);
+  const [timeGranularity, setTimeGranularity] = useState("day");
 
-  // Fetch fraud data when time range changes
+  // Debug logging to see what data is received
   useEffect(() => {
-    async function fetchData() {
-      setIsLoading(true);
-      try {
-        const response = await fetch(`/api/fraud/stats?timeRange=${timeRange}`);
-        const data = await response.json();
-        setFraudData(data);
-      } catch (error) {
-        console.error("Error fetching fraud data:", error);
-      } finally {
-        setIsLoading(false);
-      }
+    console.log("FraudGraphs - Received data:", fraudData);
+  }, [fraudData]);
+
+  // Update time granularity when time range changes
+  useEffect(() => {
+    // Set appropriate granularity based on selected time range
+    switch (timeRange) {
+      case "7d":
+        setTimeGranularity("day");
+        break;
+      case "30d":
+        setTimeGranularity("day");
+        break;
+      case "6m":
+        setTimeGranularity("week");
+        break;
+      default:
+        setTimeGranularity("day");
     }
-    fetchData();
   }, [timeRange]);
 
   // Chart color scheme
   const colors = {
     predicted: "#3B82F6", // blue-500
     reported: "#F43F5E",  // rose-500
-    axis: "#FFFFFF",      // white
+    axis: "#9CA3AF",      // gray-400 for better visibility on dark bg
     background: "transparent"
   };
 
@@ -47,126 +51,150 @@ export default function FraudGraphs() {
     { value: "6m", label: "Last 6 Months" }
   ];
 
+  const granularityOptions = [
+    { value: "hour", label: "Hourly" },
+    { value: "day", label: "Daily" },
+    { value: "week", label: "Weekly" },
+    { value: "month", label: "Monthly" }
+  ];
+
+  // Format the X axis ticks based on granularity
+  const formatXAxis = (tickItem) => {
+    const date = new Date(tickItem);
+    
+    switch (timeGranularity) {
+      case "hour":
+        return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      case "day":
+        return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+      case "week":
+        return `Week ${Math.ceil(date.getDate() / 7)} ${date.toLocaleDateString([], { month: 'short' })}`;
+      case "month":
+        return date.toLocaleDateString([], { month: 'short', year: '2-digit' });
+      default:
+        return tickItem;
+    }
+  };
+
+  // Safe access to data with fallbacks
+  const trendData = Array.isArray(fraudData?.trends) ? fraudData.trends : [];
+
+  // Create formatted data for the trend chart
+  const formattedTrendData = trendData.map(item => ({
+    date: item.date,
+    "Predicted Fraud": item.predicted_fraud || 0,
+    "Reported Fraud": item.reported_fraud || 0
+  }));
+
+  const NoDataMessage = () => (
+    <div className="flex items-center justify-center h-40 w-full">
+      <div className="text-center">
+        <p className="text-gray-400 mb-2">No fraud data available</p>
+        <p className="text-sm text-gray-500">Use the "Report Fraud" tab to register suspicious transactions</p>
+      </div>
+    </div>
+  );
+
+  if (isLoading) {
+    return (
+      <div className="animate-pulse space-y-4">
+        <div className="h-48 bg-gray-700 rounded-md"></div>
+      </div>
+    );
+  }
+
   return (
     <div className="w-full">
       <div className="flex flex-wrap items-center justify-between mb-4">
-        <h2 className="text-lg font-medium text-white">Fraud Analysis</h2>
-        
-        {/* Time Range Selector */}
-        <div className="mt-2 sm:mt-0">
-          <select
-            value={timeRange}
-            onChange={(e) => setTimeRange(e.target.value)}
-            className="px-3 py-1 text-sm bg-gray-50 text-black rounded-md border border-gray-100 focus:outline-none"
-          >
-            {timeRangeOptions.map(option => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
+        <div className="flex items-center space-x-3">
+          <div>
+            <select
+              value={timeRange}
+              onChange={(e) => setTimeRange(e.target.value)}
+              className="px-3 py-1 text-sm bg-gray-700 text-white rounded-md border border-gray-600 focus:outline-none focus:ring focus:ring-blue-500 focus:ring-opacity-25"
+            >
+              {timeRangeOptions.map(option => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <select
+              value={timeGranularity}
+              onChange={(e) => setTimeGranularity(e.target.value)}
+              className="px-3 py-1 text-sm bg-gray-700 text-white rounded-md border border-gray-600 focus:outline-none focus:ring focus:ring-blue-500 focus:ring-opacity-25"
+            >
+              {granularityOptions.map(option => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
       </div>
 
-      {isLoading ? (
-        <div className="flex justify-center items-center h-64">
-          <p className="text-white">Loading data...</p>
-        </div>
-      ) : (
-        <div className="space-y-6">
-          {/* Fraud Cases by Category (Bar Chart) */}
-          <div>
-            <h3 className="text-sm font-medium text-white mb-3">
-              Fraud Cases by Category
-            </h3>
-            <div className="bg-gray-50 p-3 rounded-md">
-              <ResponsiveContainer width="100%" height={250}>
-                <BarChart data={fraudData.categories} barSize={25}>
-                  <XAxis 
-                    dataKey="category" 
-                    stroke={colors.axis}
-                    tick={{ fill: colors.axis, fontSize: 12 }}
-                    axisLine={{ stroke: colors.axis, strokeWidth: 0.5 }}
-                  />
-                  <YAxis 
-                    stroke={colors.axis}
-                    tick={{ fill: colors.axis, fontSize: 12 }}
-                    axisLine={{ stroke: colors.axis, strokeWidth: 0.5 }}
-                  />
-                  <Tooltip 
-                    contentStyle={{ backgroundColor: 'rgba(0, 0, 0, 0.7)', border: 'none' }}
-                    itemStyle={{ color: '#fff' }}
-                  />
-                  <Legend 
-                    wrapperStyle={{ fontSize: 12, color: colors.axis }}
-                  />
-                  <Bar 
-                    dataKey="predicted" 
-                    fill={colors.predicted} 
-                    name="Predicted Fraud" 
-                    radius={[4, 4, 0, 0]}
-                  />
-                  <Bar 
-                    dataKey="reported" 
-                    fill={colors.reported} 
-                    name="Reported Fraud" 
-                    radius={[4, 4, 0, 0]}
-                  />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-
-          {/* Time-Series Fraud Trend (Line Chart) */}
-          <div>
-            <h3 className="text-sm font-medium text-white mb-3">
-              Fraud Trends Over Time
-            </h3>
-            <div className="bg-gray-50 p-3 rounded-md">
-              <ResponsiveContainer width="100%" height={250}>
-                <LineChart data={fraudData.trends}>
+      <div className="space-y-6">
+        <div>
+          <h3 className="text-sm font-medium text-gray-300 mb-3">Fraud Trends Over Time</h3>
+          {formattedTrendData.length === 0 ? (
+            <NoDataMessage />
+          ) : (
+            <div className="h-48 md:h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart
+                  data={formattedTrendData}
+                  margin={{ top: 5, right: 30, left: 0, bottom: 5 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
                   <XAxis 
                     dataKey="date" 
-                    stroke={colors.axis}
-                    tick={{ fill: colors.axis, fontSize: 12 }}
-                    axisLine={{ stroke: colors.axis, strokeWidth: 0.5 }}
+                    stroke="#9CA3AF"
+                    tick={{ fill: '#9CA3AF' }}
+                    tickFormatter={formatXAxis}
                   />
                   <YAxis 
-                    stroke={colors.axis}
-                    tick={{ fill: colors.axis, fontSize: 12 }}
-                    axisLine={{ stroke: colors.axis, strokeWidth: 0.5 }}
+                    stroke="#9CA3AF"
+                    tick={{ fill: '#9CA3AF' }}
                   />
                   <Tooltip 
-                    contentStyle={{ backgroundColor: 'rgba(0, 0, 0, 0.7)', border: 'none' }}
-                    itemStyle={{ color: '#fff' }}
+                    contentStyle={{ 
+                      backgroundColor: '#1F2937', 
+                      border: '1px solid #374151',
+                      color: '#E5E7EB' 
+                    }}
+                    labelFormatter={(label) => new Date(label).toLocaleDateString([], {
+                      weekday: 'short',
+                      year: 'numeric',
+                      month: 'short',
+                      day: 'numeric'
+                    })}
                   />
-                  <Legend 
-                    wrapperStyle={{ fontSize: 12, color: colors.axis }}
+                  <Legend wrapperStyle={{ color: '#E5E7EB' }} />
+                  <Line
+                    type="monotone"
+                    dataKey="Predicted Fraud"
+                    stroke="#3B82F6"
+                    strokeWidth={2}
+                    dot={{ r: 4 }}
+                    activeDot={{ r: 6, stroke: '#2563EB', strokeWidth: 2 }}
                   />
                   <Line
                     type="monotone"
-                    dataKey="predicted"
-                    stroke={colors.predicted}
+                    dataKey="Reported Fraud"
+                    stroke="#EF4444"
                     strokeWidth={2}
-                    dot={{ fill: colors.predicted, r: 4 }}
-                    activeDot={{ r: 6 }}
-                    name="Predicted Fraud"
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="reported"
-                    stroke={colors.reported}
-                    strokeWidth={2}
-                    dot={{ fill: colors.reported, r: 4 }}
-                    activeDot={{ r: 6 }}
-                    name="Reported Fraud"
+                    dot={{ r: 4 }}
+                    activeDot={{ r: 6, stroke: '#DC2626', strokeWidth: 2 }}
                   />
                 </LineChart>
               </ResponsiveContainer>
             </div>
-          </div>
+          )}
         </div>
-      )}
+      </div>
     </div>
   );
 }
